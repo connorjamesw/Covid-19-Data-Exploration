@@ -197,7 +197,7 @@ SELECT d.continent,
        SUM(CAST(v.new_vaccinations AS NUMERIC)) OVER (PARTITION BY d.location ORDER BY d.location, d.date) AS cumulative_vaccinations
 FROM CovidDeaths d
 	  JOIN 
-     CovidVaccinations v ON d.location = v.location AND d.date = v.date
+    CovidVaccinations v ON d.location = v.location AND d.date = v.date
 WHERE d.continent IS NOT NULL
   
 SELECT *,
