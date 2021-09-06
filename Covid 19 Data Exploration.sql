@@ -3,7 +3,7 @@
 -- Data as of 07/08/21
 -- data source: https://ourworldindata.org/covid-deaths
 
--- Using Joins, CTE's, Aggreagte Functions, Windows Functions
+-- Using Joins, CTE's, Temp Tables, Aggreagte Functions, Windows Functions
 
 
 
@@ -26,9 +26,9 @@ ALTER COLUMN date DATE;
 --1. Comparing daily cases and deaths globally 
 
 SELECT date, 
-	   SUM(new_cases) AS total_cases, 
-	   SUM(cast(new_deaths as INT)) AS total_deaths, 
-	   ROUND((SUM(new_deaths)/SUM(new_cases))*100, 2) AS death_percentage
+       SUM(new_cases) AS total_cases, 
+       SUM(new_deaths) AS total_deaths, 
+       ROUND((SUM(new_deaths)/SUM(new_cases))*100, 2) AS death_percentage
 FROM CovidDeaths
 WHERE continent IS NOT NULL
 GROUP BY date
@@ -46,8 +46,8 @@ ORDER BY date ASC;
 -- 2. Global summary
 
 SELECT SUM(new_cases) AS total_cases, 
-	   SUM(new_deaths) AS total_deaths, 
-	   ROUND(SUM(new_deaths)/SUM(New_Cases)*100, 2) AS death_percentage
+       SUM(new_deaths) AS total_deaths,
+       ROUND(SUM(new_deaths)/SUM(new_cases)*100, 2) AS death_percentage
 FROM CovidDeaths
 WHERE continent IS NOT NULL; 
 
@@ -58,7 +58,8 @@ WHERE continent IS NOT NULL;
 
 -- 3. Death count broken down by continent
 
-SELECT location, SUM(new_deaths) AS total_death_count
+SELECT location, 
+       SUM(new_deaths) AS total_death_count
 FROM CovidDeaths
 WHERE continent IS NULL 
 AND location NOT IN ('World', 'European Union', 'International')
@@ -76,12 +77,13 @@ ORDER BY total_death_count DESC;
 -- 4a. Comparing countries with the highest infection rate compared to population (per 100 people)
 
 SELECT location, 
-	   population, 
-	   MAX(total_cases) AS highest_infection_count,  
-	   ROUND(MAX((total_cases/population))*100, 2) as infection_rate
+       population, 
+       MAX(total_cases) AS highest_infection_count,  
+       ROUND(MAX((total_cases/population))*100, 2) as infection_rate
 FROM CovidDeaths
 WHERE continent IS NOT NULL
-GROUP BY location, population
+GROUP BY location, 
+	 population
 HAVING MAX(total_cases) IS NOT NULL
 ORDER BY infection_rate DESC;
 
@@ -90,12 +92,15 @@ ORDER BY infection_rate DESC;
 
 SELECT location, 
        population,
-	   date, 
-	   MAX(total_cases) AS highest_infection_count,  
-	   ROUND(MAX((total_cases/population))*100, 2) AS cases_per_hundred
+       date, 
+       MAX(total_cases) AS highest_infection_count,  
+       ROUND(MAX((total_cases/population))*100, 2) AS cases_per_hundred
 FROM CovidDeaths
-GROUP BY location, population, date
-ORDER BY location, date;
+GROUP BY location, 
+	 population,
+	 date
+ORDER BY location,
+	 date;
 
 
 
@@ -104,17 +109,18 @@ ORDER BY location, date;
 
 --5a. Using a nested subquery to calculate the 7 day rolling average of deaths per million.
 
-SELECT A.location, A.population, A.date, A.new_deaths, ROUND((A.rolling_avg)*1000000/(A.population),2) AS deaths_per_million_7da
+SELECT A.location, 
+       A.population, 
+       A.date,
+       A.new_deaths, 
+       ROUND((A.rolling_avg)*1000000/(A.population),2) AS deaths_per_million_7da
 FROM
- (
-	 SELECT location,
-			population,
-			date,
-			new_deaths,
-			AVG(CAST(new_deaths AS DECIMAL(6,2))) OVER (PARTITION BY location
-											  ORDER BY date
-											  ROWS BETWEEN 6 PRECEDING and CURRENT ROW
-											 ) as rolling_avg
+(
+SELECT location,
+       population,
+       date,
+       new_deaths,
+       AVG(CAST(new_deaths AS DECIMAL(6,2))) OVER (PARTITION BY location ORDER BY date ROWS BETWEEN 6 PRECEDING and CURRENT ROW) AS rolling_avg
 FROM coviddeaths
 WHERE continent IS NOT NULL
 --AND location = 'United Kingdom'
@@ -127,16 +133,18 @@ WITH rolling_avg_cte
 AS
 (
 SELECT location,
-		population,
-		date,
-		new_deaths,
-		AVG(CAST(new_deaths AS DECIMAL)) OVER (PARTITION BY location
-                                          ORDER BY date
-                                          ROWS BETWEEN 6 PRECEDING and CURRENT ROW
-                                         ) as rolling_avg
-										 FROM coviddeaths
-										 WHERE continent IS NOT NULL)
-SELECT location, population, date, new_deaths, ROUND((rolling_avg * 1000000/population),2) AS deaths_per_million_7da FROM rolling_avg_cte;
+       population,
+       date,
+       new_deaths,
+       AVG(CAST(new_deaths AS DECIMAL)) OVER (PARTITION BY location ORDER BY date ROWS BETWEEN 6 PRECEDING and CURRENT ROW) AS rolling_avg
+FROM coviddeaths
+WHERE continent IS NOT NULL
+)
+SELECT location, 
+       population, 
+       date, 
+       new_deaths, 
+       ROUND((rolling_avg * 1000000/population),2) AS deaths_per_million_7da FROM rolling_avg_cte;
 
 
 
@@ -146,18 +154,20 @@ SELECT location, population, date, new_deaths, ROUND((rolling_avg * 1000000/popu
 -- 6a. Using a common table expression to calcaulte the total number of vaccine doses administered per 100 people
 
 WITH doses_per_100 (continent, location, date, population, new_vaccinations, cumulative_vaccinations)
-AS (SELECT d.continent,
-           d.location,
-           d.date,
-           d.population,
-           v.new_vaccinations,
-           SUM(CAST(v.new_vaccinations AS NUMERIC)) OVER (PARTITION BY d.location ORDER BY d.location, d.date) AS cumulative_vaccinations
-    FROM CovidDeaths d
-			JOIN 
-		 CovidVaccinations v ON d.location = v.location AND d.date = v.date
-    WHERE d.continent IS NOT NULL
-   --AND d.location LIKE '%United Kingdom%'
-   )
+AS 
+(
+SELECT d.continent,
+       d.location,
+       d.date,
+       d.population,
+       v.new_vaccinations,
+       SUM(CAST(v.new_vaccinations AS NUMERIC)) OVER (PARTITION BY d.location ORDER BY d.location, d.date) AS cumulative_vaccinations
+FROM CovidDeaths d
+	  JOIN 
+     CovidVaccinations v ON d.location = v.location AND d.date = v.date
+WHERE d.continent IS NOT NULL
+--AND d.location LIKE '%United Kingdom%'
+)
 SELECT *,
        ROUND(cumulative_vaccinations / population * 100, 2) AS doses_per_hundred
 FROM doses_per_100
@@ -185,10 +195,10 @@ SELECT d.continent,
        d.population,
        v.new_vaccinations,
        SUM(CAST(v.new_vaccinations AS NUMERIC)) OVER (PARTITION BY d.location ORDER BY d.location, d.date) AS cumulative_vaccinations
-    FROM CovidDeaths d
-			JOIN 
-		 CovidVaccinations v ON d.location = v.location AND d.date = v.date
-    WHERE d.continent IS NOT NULL
+FROM CovidDeaths d
+	  JOIN 
+     CovidVaccinations v ON d.location = v.location AND d.date = v.date
+WHERE d.continent IS NOT NULL
   
 SELECT *,
        ROUND(cumulative_vaccinations / population * 100, 2) AS doses_per_hundred
